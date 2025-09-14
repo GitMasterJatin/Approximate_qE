@@ -5,7 +5,7 @@ import random
 import os
 
 NUM_ROWS = 5_000_000
-DATA_FILE = "large_dataset.parquet" # We will save to Parquet for speed
+DATA_FILE = "large_data.csv" # We will save to Parquet for speed
 
 def generate_and_save():
     if os.path.exists(DATA_FILE):

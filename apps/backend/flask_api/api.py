@@ -14,107 +14,112 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # --- Global "Singleton" Variables ---
 aqe_engine = None
 raw_df = None
-# --- We store the high-level error tolerance ---
 engine_params = {"error_tolerance_percent": 1.0}
-
-# --- Centralize the column schema the engine requires ---
-ENGINE_COLUMN_CONFIG = {
-    "dim_cols": ['category'], "numeric_cols": ['amount', 'value'],
-    "distinct_cols": ['user_id', 'category']
-}
+# --- The column config is now dynamic and stored globally ---
+active_column_config = None
 
 def allowed_file(filename):
     """Checks if the uploaded file has an allowed extension."""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # --- 2. Helper Function to Load/Reload the Engine ---
-def load_and_fit_engine(params, dataframe):
-    """
-    Fits a new engine instance based on the provided error tolerance.
-    This is the expensive, multi-second operation.
-    """
-    print(f"Fitting new engine with params: {params}...")
-    # The engine now takes the high-level error percentage directly
+def load_and_fit_engine(params, dataframe, column_config):
+    """Fits a new engine instance with dynamic parameters AND column configuration."""
+    print(f"Fitting new engine with params: {params} and column config...")
     engine = FastAQE(error_tolerance_percent=params['error_tolerance_percent'])
-    engine.fit(
-        dataframe,
-        dim_cols=ENGINE_COLUMN_CONFIG['dim_cols'],
-        numeric_cols=ENGINE_COLUMN_CONFIG['numeric_cols'],
-        distinct_cols=ENGINE_COLUMN_CONFIG['distinct_cols']
-    )
+    engine.fit(dataframe, column_config)
     return engine
 
 # --- 3. Define API Endpoints ---
 @app.route('/status', methods=['GET'])
 def status():
-    """Endpoint to check engine status and current error tolerance."""
+    """Endpoint to check engine status and current configurations."""
     if aqe_engine:
         return jsonify({
             "status": "ready",
             "total_rows_in_source": aqe_engine.total_rows,
-            "sample_table_size": len(aqe_engine.sample_df),
-            "current_error_target": f"{engine_params['error_tolerance_percent']}%"
+            "current_error_target": f"{engine_params['error_tolerance_percent']}%",
+            "active_column_config": active_column_config
         })
     else:
-        return jsonify({"status": "loading or not initialized"}), 503
+        return jsonify({"status": "Engine not initialized. Please upload a file."}), 503
 
 @app.route('/upload', methods=['POST'])
-def upload_file():
-    """Allows uploading a new dataset (CSV or Parquet) to re-fit the engine."""
-    global aqe_engine, raw_df
+def upload_and_configure():
+    """
+    Uploads a new dataset and configures the engine based on form data.
+    This is now the main entry point for fitting the engine.
+    """
+    global aqe_engine, raw_df, active_column_config
+    
     if 'file' not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
-        
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        try:
-            print(f"\n--- Loading new dataset from '{filename}' ---")
+    
+    try:
+        # Extract column configuration from form fields
+        # Expecting comma-separated strings
+        new_config = {
+            "dim_cols": [col.strip() for col in request.form.get('dim_cols', '').split(',') if col.strip()],
+            "numeric_cols": [col.strip() for col in request.form.get('numeric_cols', '').split(',') if col.strip()],
+            "distinct_cols": [col.strip() for col in request.form.get('distinct_cols', '').split(',') if col.strip()]
+        }
+        if not any(new_config.values()):
+             return jsonify({"error": "Form fields 'dim_cols', 'numeric_cols', or 'distinct_cols' must be provided."}), 400
+
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+            
+            print(f"\n--- Loading new dataset from '{filename}' with config: {new_config} ---")
             new_df = pd.read_csv(filepath) if filename.endswith('.csv') else pd.read_parquet(filepath)
 
-            # Validate that the new file has the required columns
-            required_cols = set(ENGINE_COLUMN_CONFIG['dim_cols'] + ENGINE_COLUMN_CONFIG['numeric_cols'] + ENGINE_COLUMN_CONFIG['distinct_cols'])
-            if not required_cols.issubset(new_df.columns):
-                missing = list(required_cols - set(new_df.columns))
-                return jsonify({"error": f"Uploaded file is missing required columns: {missing}"}), 400
+            # Validate that all configured columns actually exist in the dataframe
+            all_config_cols = set(new_config['dim_cols'] + new_config['numeric_cols'] + new_config['distinct_cols'])
+            if not all_config_cols.issubset(new_df.columns):
+                missing = list(all_config_cols - set(new_df.columns))
+                return jsonify({"error": f"Configured columns not found in file: {missing}"}), 400
+
+            # Re-fit the engine with the new data and new configuration
+            new_engine = load_and_fit_engine(engine_params, new_df, new_config)
             
-            # Re-fit the engine on the new data using the CURRENT error tolerance
-            new_engine = load_and_fit_engine(engine_params, new_df)
-            aqe_engine, raw_df = new_engine, new_df # Hot-swap the global engine and dataframe
+            # Hot-swap all global state
+            aqe_engine, raw_df, active_column_config = new_engine, new_df, new_config
             
-            print("--- Engine successfully re-fitted on new dataset. ---")
+            print("--- Engine successfully configured and fitted on new dataset. ---")
             return jsonify({
-                "message": f"Engine reloaded with data from '{filename}'.",
-                "current_error_target": f"{engine_params['error_tolerance_percent']}%"
+                "message": f"Engine configured and loaded with data from '{filename}'.",
+                "active_column_config": active_column_config
             })
-        except Exception as e:
-            return jsonify({"error": f"Failed to process file: {str(e)}"}), 500
-    return jsonify({"error": "File type not allowed. Please upload a .csv or .parquet file."}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to process file and configuration: {str(e)}"}), 500
+    return jsonify({"error": "Invalid file type."}), 400
 
 @app.route('/reload', methods=['POST'])
 def reload_engine():
-    """Reloads the engine with a new error tolerance on the CURRENT dataset."""
+    """Reloads the engine with a new error tolerance on the CURRENT dataset and config."""
     global aqe_engine, engine_params
+    if not raw_df or active_column_config is None:
+        return jsonify({"error": "No dataset is loaded. Please use /upload first."}), 400
+    
     data = request.get_json()
     if not data or 'error_tolerance_percent' not in data:
         return jsonify({"error": "Missing 'error_tolerance_percent' in request body"}), 400
     
     new_error_target = data['error_tolerance_percent']
+    if not (0.1 <= new_error_target <= 10.0):
+        return jsonify({"error": "error_tolerance_percent must be between 0.1 and 10.0"}), 400
     
     try:
-        if not (0.1 <= new_error_target <= 10.0):
-            return jsonify({"error": "error_tolerance_percent must be between 0.1 and 10.0"}), 400
-        
         new_params = {"error_tolerance_percent": new_error_target}
-        print(f"\n--- Received request to reload engine with new error target: {new_params} ---")
+        print(f"\n--- Reloading engine with new error target: {new_params} ---")
         
-        # This is the slow part: re-fit the engine with the new tolerance
-        new_engine = load_and_fit_engine(new_params, raw_df)
-        aqe_engine, engine_params = new_engine, new_params # Hot-swap
+        # Re-fit using the current dataset and config
+        new_engine = load_and_fit_engine(new_params, raw_df, active_column_config)
+        aqe_engine, engine_params = new_engine, new_params
         
         print("--- Engine reload complete. ---")
         return jsonify({"message": "Engine reloaded successfully.", "new_error_target": f"{new_error_target}%"})
@@ -125,55 +130,37 @@ def reload_engine():
 def handle_query():
     """The main endpoint to process an approximate query."""
     if not aqe_engine:
-        return jsonify({"error": "Engine not ready"}), 503
+        return jsonify({"error": "Engine not ready. Please use /upload to configure it."}), 503
     data = request.get_json()
     if not data or 'query' not in data:
-        return jsonify({"error": "Missing 'query' key in request body"}), 400
+        return jsonify({"error": "Missing 'query' key"}), 400
     
     query_str = data['query']
     approx_response = aqe_engine.query(query_str)
     if 'error' in approx_response:
         return jsonify(approx_response), 400
-    try:
-        exact_response = aqe_engine.exact_query(raw_df, query_str)
-        final_response = {
-            "query": query_str,
-            "explanation": approx_response.get('explanation'),
-            "approximate_result": {
-                "result": approx_response.get('approx_result'),
-                "time_sec": approx_response.get('query_time_sec')
-            },
-            "exact_result": {
-                "result": exact_response.get('exact_result'),
-                "time_sec": exact_response.get('query_time_sec')
-            },
-            "comparison": {
-                "accuracy": calculate_accuracy(approx_response.get('approx_result'), exact_response.get('exact_result')),
-                "speedup_factor": f"{exact_response.get('query_time_sec', 0) / (approx_response.get('query_time_sec', 1) or 1):.2f}x"
-            }
-        }
-        return jsonify(final_response)
-    except Exception as e:
-        return jsonify({"error": f"Failed to run exact query for comparison: {str(e)}"}), 500
+    
+    exact_response = aqe_engine.exact_query(raw_df, query_str)
+    if 'error' in exact_response:
+        # If exact fails, return approx only
+        return jsonify({"warning": f"Could not compute exact result for comparison: {exact_response['error']}", "approximate_response": approx_response})
 
-# --- 4. Main execution block to load the engine and run the server ---
+    final_response = {
+        "query": query_str, "explanation": approx_response.get('explanation'),
+        "approximate_result": {"result": approx_response.get('approx_result'), "time_sec": approx_response.get('query_time_sec')},
+        "exact_result": {"result": exact_response.get('exact_result'), "time_sec": exact_response.get('query_time_sec')},
+        "comparison": {
+            "accuracy": calculate_accuracy(approx_response.get('approx_result'), exact_response.get('exact_result')),
+            "speedup_factor": f"{exact_response.get('query_time_sec', 0) / (approx_response.get('query_time_sec', 1) or 1):.2f}x"
+        }
+    }
+    return jsonify(final_response)
+
+# --- 4. Main execution block (now starts in an un-configured state) ---
 if __name__ == '__main__':
-    print("--- Approximate Query Engine API (Accuracy-Driven) ---")
-    DATA_FILE = "large_dataset.parquet"
-    try:
-        print(f"Loading initial dataset from {DATA_FILE}...")
-        raw_df = pd.read_parquet(DATA_FILE)
-        print("Initial dataset loaded.")
-        
-        # Fit the engine ONCE at startup with the default error tolerance
-        aqe_engine = load_and_fit_engine(engine_params, raw_df)
-        print("\n--- Engine is ready. Starting API server. ---")
-    except FileNotFoundError:
-        print(f"\nFATAL ERROR: Default data file '{DATA_FILE}' not found. Please run 'generate_data.py' first.")
-        exit()
-    except Exception as e:
-        print(f"\nFATAL ERROR: Could not initialize engine. {e}")
-        exit()
-        
+    print("--- Approximate Query Engine API (Dynamic Configuration) ---")
+    print("Server is starting in an un-configured state.")
+    print("Please use the /upload endpoint to load a dataset and provide column configuration.")
+    print("API is ready and listening...")
     app.run(debug=True, host='0.0.0.0', port=5000)
 

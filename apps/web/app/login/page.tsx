@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-
+import { useRouter } from 'next/navigation';
 export default function LoginPage() {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
+  const router=useRouter()
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -26,8 +27,8 @@ export default function LoginPage() {
     setTimeout(() => {
       console.log("Login attempt:", formData);
       setIsLoading(false);
-      alert("Login functionality would be implemented here!");
-    }, 1000);
+      router.push("/data-source")
+    }, 2000);
   };
 
   return (

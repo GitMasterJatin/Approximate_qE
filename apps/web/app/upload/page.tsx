@@ -8,6 +8,12 @@ const FileUpload: React.FC = () => {
   const router = useRouter();
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [dimCols, setDimCols] = useState<string>('');
+  const [numericCols, setNumericCols] = useState<string>('');
+  const [distinctCols, setDistinctCols] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false); // New state for loading
+  const [loadingMessage, setLoadingMessage] = useState(''); // New state for loading message
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -42,8 +48,54 @@ const FileUpload: React.FC = () => {
     fileInputRef.current?.click();
   };
 
-  const handleNext = () => {
-    router.push('/dashboard?source=upload');
+  const handleNext = async () => {
+    if (!uploadedFile) {
+      setError('Please upload a CSV file first.');
+      return;
+    }
+
+    setError(null); // Clear previous errors
+
+    setLoading(true); // Start loading
+    setLoadingMessage("Sending request...");
+
+    const formData = new FormData();
+    formData.append('file', uploadedFile);
+    formData.append('dim_cols', dimCols);
+    formData.append('numeric_cols', numericCols);
+    formData.append('distinct_cols', distinctCols);
+
+    try {
+      const response = await fetch('http://127.0.0.1:5000/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        setLoadingMessage("Building sketches..."); // Update message
+        const queryParams = new URLSearchParams();
+        queryParams.append('fileName', uploadedFile.name);
+        if (dimCols) {
+          queryParams.append('dimCols', dimCols);
+        }
+        if (numericCols) {
+          queryParams.append('numericCols', numericCols);
+        }
+        if (distinctCols) {
+          queryParams.append('distinctCols', distinctCols);
+        }
+        setLoadingMessage("Completing..."); // Update message before navigation
+        router.push(`/dashboard?${queryParams.toString()}`);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.message || 'File upload failed.');
+      }
+    } catch (err) {
+      setError('Network error or server is unreachable.');
+    } finally {
+      setLoading(false); // End loading
+      setLoadingMessage(''); // Clear loading message
+    }
   };
 
   return (
@@ -121,14 +173,77 @@ const FileUpload: React.FC = () => {
             )}
           </div>
 
+          {error && (
+            <div className="mt-4 text-red-400 text-center">
+              {error}
+            </div>
+          )}
+
+          {uploadedFile && (
+            <div className="mt-6 space-y-4">
+              <div>
+                <label htmlFor="dim_cols" className="block text-gray-300 text-sm font-medium mb-2">
+                  Dimension Columns (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  id="dim_cols"
+                  value={dimCols}
+                  onChange={(e) => setDimCols(e.target.value)}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-cyan-500 focus:border-cyan-500"
+                  placeholder="e.g., city, country, product_category"
+                />
+              </div>
+              <div>
+                <label htmlFor="numeric_cols" className="block text-gray-300 text-sm font-medium mb-2">
+                  Numeric Columns (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  id="numeric_cols"
+                  value={numericCols}
+                  onChange={(e) => setNumericCols(e.target.value)}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-cyan-500 focus:border-cyan-500"
+                  placeholder="e.g., price, quantity, sales"
+                />
+              </div>
+              <div>
+                <label htmlFor="distinct_cols" className="block text-gray-300 text-sm font-medium mb-2">
+                  Distinct Count Columns (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  id="distinct_cols"
+                  value={distinctCols}
+                  onChange={(e) => setDistinctCols(e.target.value)}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-cyan-500 focus:border-cyan-500"
+                  placeholder="e.g., customer_id, order_id"
+                />
+              </div>
+            </div>
+          )}
+
           {uploadedFile && (
             <div className="mt-8 flex justify-center">
               <button
                 onClick={handleNext}
                 className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white px-8 py-3 rounded-lg font-medium flex items-center transition-all duration-300 shadow-lg shadow-cyan-500/30"
+                disabled={loading}
               >
-                Continue to Dashboard
-                <ArrowRight className="w-5 h-5 ml-2" />
+                {loading ? (
+                  <div className="flex items-center">
+                    <svg className="animate-spin h-5 w-5 text-white mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    {loadingMessage}
+                  </div>
+                ) : (
+                  <>
+                    Continue to Dashboard
+                    <ArrowRight className="w-5 h-5 ml-2" />
+                  </>
+                )}
               </button>
             </div>
           )}

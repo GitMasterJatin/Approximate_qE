@@ -10,6 +10,15 @@ export default function LoginPage() {
   const router=useRouter()
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isLogin, setIsLogin] = useState(true); // To toggle between Login and Signup
+  const [signupFormData, setSignupFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+  });
+  const [signupError, setSignupError] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -19,16 +28,81 @@ export default function LoginPage() {
     }));
   };
 
+  const handleSignupInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setSignupFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setLoginError(null); // Clear previous login errors
     
-    // Simulate API call
-    setTimeout(() => {
-      console.log("Login attempt:", formData);
+    try {
+      const response = await fetch('http://localhost:3001/signin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: formData.email, password: formData.password }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        localStorage.setItem('token', data.token); // Store the token
+        router.push("/data-source");
+      } else {
+        const errorData = await response.json();
+        setLoginError(errorData.error || 'Login failed.');
+      }
+    } catch (error) {
+      setLoginError('Network error or server is unreachable.');
+    } finally {
       setIsLoading(false);
-      router.push("/data-source")
-    }, 2000);
+    }
+  };
+
+  const handleSignupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setSignupError(null); // Clear previous signup errors
+
+    if (signupFormData.password !== signupFormData.confirmPassword) {
+      setSignupError('Passwords do not match.');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:3001/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: signupFormData.name,
+          email: signupFormData.email,
+          password: signupFormData.password,
+        }),
+      });
+
+      if (response.ok) {
+        // Assuming successful signup means we can transition to login
+        alert('Account created successfully! Please sign in.');
+        setIsLogin(true);
+        setSignupFormData({ name: "", email: "", password: "", confirmPassword: "" }); // Clear form
+      } else {
+        const errorData = await response.json();
+        setSignupError(errorData.error || 'Signup failed.');
+      }
+    } catch (error) {
+      setSignupError('Network error or server is unreachable.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -36,83 +110,164 @@ export default function LoginPage() {
       <div className="bg-white/90 backdrop-blur-lg rounded-3xl shadow-2xl p-10 w-full max-w-md border border-white/20">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2 tracking-tight">
-            Welcome Back
+            {isLogin ? "Welcome Back" : "Create Your Account"}
           </h1>
           <p className="text-gray-600 text-base">
-            Sign in to your account to continue
+            {isLogin ? "Sign in to your account to continue" : "Join us and start exploring!"}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label htmlFor="email" className="block text-sm font-semibold text-gray-700">
-              Email Address
-            </label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
-              onChange={handleInputChange}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all duration-200"
-              placeholder="Enter your email"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="password" className="block text-sm font-semibold text-gray-700">
-              Password
-            </label>
-            <div className="relative">
+        {isLogin ? (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {loginError && <p className="text-red-500 text-sm text-center">{loginError}</p>}
+            <div className="space-y-2">
+              <label htmlFor="email" className="block text-sm font-semibold text-gray-700">
+                Email Address
+              </label>
               <input
-                type={showPassword ? "text" : "password"}
-                id="password"
-                name="password"
-                value={formData.password}
+                type="email"
+                id="email"
+                name="email"
+                value={formData.email}
                 onChange={handleInputChange}
-                className="w-full px-4 py-3 pr-12 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all duration-200"
-                placeholder="Enter your password"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all duration-200"
+                placeholder="Enter your email"
                 required
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 transition-colors duration-200 p-1 rounded"
-              >
-                {showPassword ? "👁️" : "👁️‍🗨️"}
-              </button>
             </div>
-          </div>
 
-          <div className="flex items-center justify-between">
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input 
-                type="checkbox" 
-                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 focus:ring-2" 
-              />
-              <span className="text-sm text-gray-600">Remember me</span>
-            </label>
-            <a href="#" className="text-sm text-indigo-600 hover:text-indigo-500 font-medium transition-colors duration-200">
-              Forgot password?
-            </a>
-          </div>
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 px-6 rounded-xl font-semibold text-base hover:from-indigo-600 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-200 disabled:opacity-70 disabled:cursor-not-allowed transform hover:-translate-y-0.5 transition-all duration-200 shadow-lg hover:shadow-xl"
-          >
-            {isLoading ? (
-              <div className="flex items-center justify-center space-x-2">
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                <span>Signing in...</span>
+            <div className="space-y-2">
+              <label htmlFor="password" className="block text-sm font-semibold text-gray-700">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  id="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 pr-12 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all duration-200"
+                  placeholder="Enter your password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 transition-colors duration-200 p-1 rounded"
+                >
+                  {showPassword ? "👁️" : "👁️‍🗨️"}
+                </button>
               </div>
-            ) : (
-              "Sign In"
-            )}
-          </button>
-        </form>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 focus:ring-2" 
+                />
+                <span className="text-sm text-gray-600">Remember me</span>
+              </label>
+              <a href="#" className="text-sm text-indigo-600 hover:text-indigo-500 font-medium transition-colors duration-200">
+                Forgot password?
+              </a>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 px-6 rounded-xl font-semibold text-base hover:from-indigo-600 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-200 disabled:opacity-70 disabled:cursor-not-allowed transform hover:-translate-y-0.5 transition-all duration-200 shadow-lg hover:shadow-xl"
+            >
+              {isLoading ? (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>Signing In...</span>
+                </div>
+              ) : (
+                "Sign In"
+              )}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleSignupSubmit} className="space-y-6">
+            {signupError && <p className="text-red-500 text-sm text-center">{signupError}</p>}
+            <div className="space-y-2">
+              <label htmlFor="signupName" className="block text-sm font-semibold text-gray-700">
+                Full Name
+              </label>
+              <input
+                type="text"
+                id="signupName"
+                name="name"
+                value={signupFormData.name}
+                onChange={handleSignupInputChange}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all duration-200"
+                placeholder="Enter your full name"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="signupEmail" className="block text-sm font-semibold text-gray-700">
+                Email Address
+              </label>
+              <input
+                type="email"
+                id="signupEmail"
+                name="email"
+                value={signupFormData.email}
+                onChange={handleSignupInputChange}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all duration-200"
+                placeholder="Enter your email"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="signupPassword" className="block text-sm font-semibold text-gray-700">
+                Password
+              </label>
+              <input
+                type="password"
+                id="signupPassword"
+                name="password"
+                value={signupFormData.password}
+                onChange={handleSignupInputChange}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all duration-200"
+                placeholder="Create a password"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="confirmPassword" className="block text-sm font-semibold text-gray-700">
+                Confirm Password
+              </label>
+              <input
+                type="password"
+                id="confirmPassword"
+                name="confirmPassword"
+                value={signupFormData.confirmPassword}
+                onChange={handleSignupInputChange}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all duration-200"
+                placeholder="Confirm your password"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-6 rounded-xl font-semibold text-base hover:from-purple-700 hover:to-pink-700 focus:outline-none focus:ring-4 focus:ring-purple-200 disabled:opacity-70 disabled:cursor-not-allowed transform hover:-translate-y-0.5 transition-all duration-200 shadow-lg hover:shadow-xl"
+            >
+              {isLoading ? (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>Signing Up...</span>
+                </div>
+              ) : (
+                "Sign Up"
+              )}
+            </button>
+          </form>
+        )}
 
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
@@ -144,9 +299,13 @@ export default function LoginPage() {
 
         <div className="text-center mt-6 pt-6 border-t border-gray-200">
           <p className="text-sm text-gray-600">
-            Don't have an account?{" "}
-            <a href="#" className="text-indigo-600 hover:text-indigo-500 font-semibold transition-colors duration-200">
-              Sign up here
+            {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
+            <a 
+              href="#" 
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-indigo-600 hover:text-indigo-500 font-semibold transition-colors duration-200"
+            >
+              {isLogin ? "Sign up here" : "Sign in here"}
             </a>
           </p>
         </div>

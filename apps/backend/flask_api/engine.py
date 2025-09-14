@@ -20,7 +20,7 @@ def calculate_accuracy(approx, exact):
                 count += 1
             if count == 0: return "N/A (no valid groups to compare)"
             avg_relative_error = total_relative_error / count
-            return f"(Avg. Relative Error: {avg_relative_error * 100:.4f}%)"
+            return f"{avg_relative_error * 100:.4f}%"
         elif isinstance(exact, (int, float)):
             # Logic for single numbers
             if exact == 0: return "100.0000%" if approx == 0 else "N/A"

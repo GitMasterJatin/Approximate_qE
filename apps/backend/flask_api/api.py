@@ -3,19 +3,18 @@ import pandas as pd
 import os
 from werkzeug.utils import secure_filename
 from engine import FastAQE, calculate_accuracy
-
+from flask_cors import CORS
 # --- 1. Initialize Flask App & Config ---
 UPLOAD_FOLDER = './uploads'
 ALLOWED_EXTENSIONS = {'csv', 'parquet'}
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
+CORS(app)
 # --- Global "Singleton" Variables ---
 aqe_engine = None
 raw_df = None
 engine_params = {"error_tolerance_percent": 1.0}
-# --- The column config is now dynamic and stored globally ---
 active_column_config = None
 
 def allowed_file(filename):
@@ -60,7 +59,6 @@ def upload_and_configure():
     
     try:
         # Extract column configuration from form fields
-        # Expecting comma-separated strings
         new_config = {
             "dim_cols": [col.strip() for col in request.form.get('dim_cols', '').split(',') if col.strip()],
             "numeric_cols": [col.strip() for col in request.form.get('numeric_cols', '').split(',') if col.strip()],
@@ -102,7 +100,11 @@ def upload_and_configure():
 def reload_engine():
     """Reloads the engine with a new error tolerance on the CURRENT dataset and config."""
     global aqe_engine, engine_params
-    if not raw_df or active_column_config is None:
+    
+    # --- THIS IS THE FIX ---
+    # The old code `if not raw_df:` caused the crash.
+    # The new code `if raw_df is None:` is the correct, unambiguous way to check.
+    if raw_df is None or active_column_config is None:
         return jsonify({"error": "No dataset is loaded. Please use /upload first."}), 400
     
     data = request.get_json()
@@ -140,10 +142,19 @@ def handle_query():
     if 'error' in approx_response:
         return jsonify(approx_response), 400
     
-    exact_response = aqe_engine.exact_query(raw_df, query_str)
-    if 'error' in exact_response:
-        # If exact fails, return approx only
-        return jsonify({"warning": f"Could not compute exact result for comparison: {exact_response['error']}", "approximate_response": approx_response})
+    try:
+        exact_response = aqe_engine.exact_query(raw_df, query_str)
+    except Exception as e:
+        # If exact fails, return approx only, which is still useful
+        return jsonify({
+            "warning": f"Could not compute exact result for comparison: {str(e)}",
+            "query": query_str,
+            "explanation": approx_response.get('explanation'),
+            "approximate_result": {
+                "result": approx_response.get('approx_result'),
+                "time_sec": approx_response.get('query_time_sec')
+            }
+        })
 
     final_response = {
         "query": query_str, "explanation": approx_response.get('explanation'),
@@ -156,7 +167,7 @@ def handle_query():
     }
     return jsonify(final_response)
 
-# --- 4. Main execution block (now starts in an un-configured state) ---
+# --- 4. Main execution block (starts in an un-configured state) ---
 if __name__ == '__main__':
     print("--- Approximate Query Engine API (Dynamic Configuration) ---")
     print("Server is starting in an un-configured state.")

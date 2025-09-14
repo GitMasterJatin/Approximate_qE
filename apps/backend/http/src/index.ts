@@ -2,15 +2,15 @@ import express from "express";
 import prismaClient from "@repo/db";
 import type { Application, Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-
+import cors from "cors";
 const JWT_SECRET = "nfrnfownjfwpjfojrfpwjfpw"
 
 
 const app: Application = express();
-const port = 3000;
+const port = 3001;
 
 app.use(express.json());
-
+app.use(cors())
 app.get("/health", (req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
@@ -29,7 +29,7 @@ app.post("/signup", async (req: Request, res: Response) => {
   }
 
   const user = await prismaClient.user.create({
-    data: { email: email, password: password, name: name },
+    data: { email: email, password: password, name: name,requests:0 },
     });
   if (!user) {
     return res.status(400).json({ error: "Failed to create user" });
@@ -56,7 +56,7 @@ app.post("/signin", async (req: Request, res: Response) => {
   res.json({ token });
 });
 
-app
+
 
 
 app.listen(port, () => {

@@ -4,7 +4,9 @@
 node_modules
 .pnp
 .pnp.js
-
+__pycache__
+uploads
+Approximate_qE\apps\backend\flask_api\__pycache__
 # Local env files
 .env
 .env.local

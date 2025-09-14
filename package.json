@@ -22,6 +22,7 @@
     "packages/*"
   ],
   "dependencies": {
-    "express": "github:types/express"
+    "dotenv": "^17.2.2",
+    "express": "^5.0.0-beta.1"
   }
 }

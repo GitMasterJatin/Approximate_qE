@@ -1,0 +1,25 @@
+{
+  "name": "http",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "tsc -b && node ./dist/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@repo/db": "./../packages/db",
+    "@repo/typescript-config": "./../packages/typescript-config",
+    "@types/jsonwebtoken": "^9.0.10",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "./../packages/typescript-config",
+    "@types/express": "^5.0.3"
+  }
+}

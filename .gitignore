@@ -36,5 +36,11 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# Large data files
 large_dataset.parquet
+*.parquet
+large_data.csv
+merged_data.csv
+*.csv
 merged_data.csv

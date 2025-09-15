@@ -1,35 +1,58 @@
-# File: generate_data.py
 import pandas as pd
 import numpy as np
 import random
 import os
+import argparse  # Import the library for command-line arguments
 
-NUM_ROWS = 5_000_000
-DATA_FILE = "large_data.csv" # We will save to Parquet for speed
+# --- Configuration ---
+# The default file name the API server looks for on startup.
+DEFAULT_DATA_FILE = "large_dataset51.csv"
 
-def generate_and_save():
-    if os.path.exists(DATA_FILE):
-        print(f"Data file '{DATA_FILE}' already exists. Skipping generation.")
+def generate_and_save(num_rows, output_file):
+    """
+    Generates a dummy dataset with a specified number of rows and saves it to a CSV file.
+    """
+    if os.path.exists(output_file):
+        print(f"Data file '{output_file}' already exists. Skipping generation.")
         return
 
-    print(f"Generating dummy data ({NUM_ROWS} rows)... This will take a moment.")
+    print(f"Generating dummy data ({num_rows:,} rows)... This will take a moment.")
     
-    # This is the same logic from your main script
+    # The data generation logic remains the same
     data = {
-        'amount': np.random.lognormal(mean=3.0, sigma=1.0, size=NUM_ROWS),
-        'value': np.random.normal(loc=100, scale=25, size=NUM_ROWS),
-        'category': [random.choice(['A', 'B', 'C', 'D', 'E', 'F', 'G']) for _ in range(NUM_ROWS)],
-        'user_id': [f"user_{random.randint(1, NUM_ROWS // 10)}" for _ in range(NUM_ROWS)]
+        'amount': np.random.lognormal(mean=2.5, sigma=1.3, size=num_rows),
+        'value': np.random.normal(loc=140, scale=42, size=num_rows),
+        'category': [random.choice(['A', 'B', 'C', 'D', 'E', 'F', 'G']) for _ in range(num_rows)],
+        'user_id': [f"user_{random.randint(1, num_rows // 10 if num_rows > 10 else num_rows)}" for _ in range(num_rows)]
     }
     
     raw_df = pd.DataFrame(data)
     
-    print(f"Generation complete. Saving to '{DATA_FILE}'...")
+    print(f"Generation complete. Saving to '{output_file}'...")
     
-    # Save to Parquet. This is much faster than CSV.
-    raw_df.to_parquet(DATA_FILE, index=False)
+    # Save to CSV
+    raw_df.to_csv(output_file, index=False)
     
     print("Save complete.")
 
 if __name__ == "__main__":
-    generate_and_save()
+    # --- 1. Set up Argument Parser ---
+    # This allows us to read arguments from the command line.
+    parser = argparse.ArgumentParser(
+        description="Generate a dummy dataset for the Approximate Query Engine."
+    )
+    
+    # --- 2. Define the '--rows' argument ---
+    # It's an integer, and it has a default value if the user provides nothing.
+    parser.add_argument(
+        "--rows",
+        type=int,
+        default=5_000_000,
+        help="The number of rows to generate in the dataset. (Default: 5,000,000)"
+    )
+    
+    args = parser.parse_args()
+
+    # --- 3. Run the generation function with the user-provided (or default) number of rows ---
+    generate_and_save(num_rows=args.rows, output_file=DEFAULT_DATA_FILE)
+
